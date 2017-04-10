@@ -8,8 +8,10 @@ https://developer.mozilla.org/en-US/docs/Web/SVG/Element
 '''
 
 import math
+import re
 import xml.etree.ElementTree as ET
 import sgf
+import subprocess
 
 class Board:
     def __init__(self, board_n):
@@ -50,6 +52,9 @@ class Board:
 
         self.add_circle(self.line_xs[x], self.line_xs[y], self.stone_radius, stone_color)
         self.add_text(self.line_xs[x], self.line_xs[y], str(number), text_color)
+
+    def svg_text(self):
+        return ET.tostring(self.svg, encoding='unicode')
 
     def write_to(self, fn):
         with open(fn, 'w') as f:
@@ -120,8 +125,42 @@ def parse_game(sgf_string):
 
     return Game(board_n, moves)
 
-with open('game.sgf') as f:
-    g = parse_game(f.read())
+def parse_kifu(lines):
+    state = 'no game'
+    game_lines = []
+    game = None
 
-b = g.board_between(6, 10)
-b.write_to('a.html')
+    for line in lines:
+        if line.strip() == '```':
+            if state == 'no game':
+                # start reading in a game
+                state = 'reading game'
+            elif state == 'reading game':
+                game = parse_game('\n'.join(game_lines))
+                state = 'text'
+            else:
+                raise RuntimeError
+        elif re.match('^`([\d-]+)`$', line):
+            if state != 'text':
+                raise RuntimeError
+            else:
+                m = re.match('^`([\d-]+)`$', line)
+                start, end = [int(x) for x in m.group(1).split('-')]
+                board = game.board_between(start, end)
+
+                yield ''
+                yield board.svg_text()
+                yield ''
+        else:
+            if state in ['no game', 'text']:
+                yield line
+            elif state == 'reading game':
+                game_lines.append(line)
+            else:
+                raise RuntimeError
+
+with open('game.kifu') as f, open('a.md', 'w') as o:
+    for line in parse_kifu(f):
+        print(line, file=o)
+
+subprocess.run(['pandoc', 'a.md', '-o', 'a.html'])
