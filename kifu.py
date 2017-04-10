@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
 
+'''
+Use https://github.com/jtauber/sgf for parsing the file
+https://en.wikipedia.org/wiki/Smart_Game_Format
+https://docs.python.org/3/library/xml.etree.elementtree.html#xml.etree.ElementTree.SubElement
+https://developer.mozilla.org/en-US/docs/Web/SVG/Element
+'''
+
 import math
 import xml.etree.ElementTree as ET
+import sgf
 
 class Board:
-    def __init__(self):
-        self.board_n = 9
+    def __init__(self, board_n):
+        self.board_n = board_n
         self.canvas_size = 200
         self.board_size = self.canvas_size * 0.9
         self.board_margin = (self.canvas_size - self.board_size) / 2
@@ -47,23 +55,73 @@ class Board:
         with open(fn, 'w') as f:
             print(ET.tostring(self.svg, encoding='unicode'), file=f)
 
-# line_xs = [board_margin + i * lane_height for i in range(board_n)]
+class Game:
+    def __init__(self, board_n, moves=[]):
+        self.board_n = board_n
+        self.moves = moves
 
-# svg = ET.Element('svg', {'height': str(canvas_size), 'width': str(canvas_size), 'xmlsn': 'http://www.w3.org/2000/svg'})
-# for x in line_xs:
-#     ET.SubElement(svg, 'line', {'x1': str(board_margin), 'x2': str(canvas_size - board_margin), 'y1': str(x), 'y2': str(x), 'stroke': 'black'})
-#     ET.SubElement(svg, 'line', {'y1': str(board_margin), 'y2': str(canvas_size - board_margin), 'x1': str(x), 'x2': str(x), 'stroke': 'black'})
+    def board_between(self, start, end):
+        board = Board(self.board_n)
+        for move in self.moves:
+            if move.number is None or move.number < start:
+                board.add_stone(move.x, move.y, move.color, '')
+            elif start <= move.number <= end:
+                board.add_stone(move.x, move.y, move.color, move.number)
+            else:
+                pass
 
-# ET.SubElement(svg, 'circle', {'cx': str(line_xs[3]), 'cy': str(line_xs[4]), 'r': str(stone_radius), 'stroke': 'black', 'fill': 'black'})
-# ET.SubElement(svg, 'text', {'x': str(line_xs[3]), 'y': str(line_xs[4]), 'fill': 'white', 'text-anchor': 'middle', 'font-size': str(text_height), 'alignment-baseline': 'middle'}).text = '10'
+        return board
 
-# ET.SubElement(svg, 'circle', {'cx': str(line_xs[4]), 'cy': str(line_xs[4]), 'r': str(stone_radius), 'stroke': 'black', 'fill': 'white'})
-# ET.SubElement(svg, 'text', {'x': str(line_xs[4]), 'y': str(line_xs[4]), 'fill': 'black', 'text-anchor': 'middle', 'font-size': str(text_height), 'alignment-baseline': 'middle'}).text = '11'
+class Move:
+    def __init__(self, x, y, color, number=None):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.number = number
 
-# with open('a.html', 'w') as f:
-#     print(ET.tostring(svg, encoding='unicode'), file=f)
+def parse_coords(xy):
+    assert len(xy) == 2
+    xc = xy[0]
+    yc = xy[1]
+    letters = 'abcdefghijklmnopqrs'
+    x = letters.index(xc)
+    y = letters.index(yc)
+    return x, y
 
-b = Board()
-b.add_stone(3, 4, 'black', 10)
-b.add_stone(4, 4, 'white', 11)
+def parse_game(sgf_string):
+    tree = sgf.parse(sgf_string)
+    moves = []
+
+    first_alternate = tree.children[0]
+    setup_node = first_alternate.nodes[0]
+    if 'AB' in setup_node.properties:
+        for xy in setup_node.properties['AB']:
+            x, y = parse_coords(xy)
+            moves.append(Move(x, y, 'black', number=None))
+
+    assert 'SZ' in setup_node.properties
+    board_n = int(setup_node.properties['SZ'][0])
+
+    for node_i, node in enumerate(first_alternate.nodes[1:]):
+        move_n = node_i + 1
+        assert len(node.properties) == 1
+        raw_color = list(node.properties.keys())[0]
+
+        if raw_color in ['RW', 'RB']:
+            break
+
+        assert raw_color in ['W', 'B']
+        x, y = parse_coords(node.properties[raw_color][0])
+
+        if raw_color == 'W':
+            moves.append(Move(x, y, 'white', move_n))
+        elif raw_color == 'B':
+            moves.append(Move(x, y, 'black', move_n))
+
+    return Game(board_n, moves)
+
+with open('game.sgf') as f:
+    g = parse_game(f.read())
+
+b = g.board_between(6, 10)
 b.write_to('a.html')
