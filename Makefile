@@ -1,2 +1,2 @@
 watch:
-	ls kifu.py | entr ./kifu.py
+	ls *.py | entr ./run.sh
